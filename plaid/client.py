@@ -76,8 +76,13 @@ class Client(object):
         return self.ACCOUNT_TYPES
 
     # Endpoints
+    @require_access_token
+    def _send_update_request(self, url, data):
+        data['access_token'] = self.access_token
+        return http_request(url, 'PATCH', data)
 
-    def connect(self, account_type, username, password, email, options=None):
+
+    def connect(self, account_type, username, password, options=None, pin=None):
         """
         Add a bank account user/login to Plaid and receive an access token
         unless a 2nd level of authentication is required, in which case
@@ -103,15 +108,15 @@ class Client(object):
 
         credentials = {
             'username': username,
-            'password': password
+            'password': password,
+            'pin': pin
         }
 
         data = {
             'client_id': self.client_id,
             'secret': self.secret,
             'type': account_type,
-            'credentials': json.dumps(credentials),
-            'email': email
+            'credentials': json.dumps(credentials)
         }
 
         if options:
@@ -126,7 +131,7 @@ class Client(object):
 
         return response
 
-    def auth(self, account_type, username, password, options=None):
+    def auth(self, account_type, username, password, options=None, update=False, pin=None):
         """
         Add a bank account user/login to Plaid and receive an access token
         unless a 2nd level of authentication is required, in which case
@@ -150,7 +155,8 @@ class Client(object):
 
         credentials = {
             'username': username,
-            'password': password
+            'password': password,
+            'pin': pin
         }
 
         data = {
@@ -163,7 +169,10 @@ class Client(object):
         if options:
             data['options'] = json.dumps(options)
 
-        response = http_request(url, 'POST', data)
+        if update:
+            response = self._send_update_request(url, data)
+        else:
+            response = http_request(url, 'POST', data)
 
         if response.ok:
             json_data = json.loads(response.content)
@@ -207,7 +216,7 @@ class Client(object):
         return http_request(url, 'POST', data)
 
     @require_access_token
-    def auth_step(self, account_type, mfa, options=None):
+    def auth_step(self, account_type, mfa, options=None, update=False):
         """
         Perform a MFA (Multi Factor Authentication) step, requires
         `access_token`
@@ -234,11 +243,14 @@ class Client(object):
             'type': account_type,
             'mfa': mfa
         }
+        # if mfa:
+        #     data['mfa'] = 'mfa'
 
         if options:
             data['options'] = json.dumps(options)
 
-        return http_request(url, 'POST', data)
+        method = 'PATCH' if update else 'POST'
+        return http_request(url, method, data)
 
     @require_access_token
     def upgrade(self, upgrade_to):
@@ -259,7 +271,7 @@ class Client(object):
 
 
     @require_access_token
-    def delete_user(self):
+    def delete_connect(self):
         """
         Delete user from Plaid, requires `access_token`
         """
@@ -273,6 +285,20 @@ class Client(object):
 
         return http_request(url, 'DELETE', data)
 
+    @require_access_token
+    def delete_auth(self):
+        """
+        Delete user from Plaid, requires `access_token`
+        """
+        url = urljoin(self.url, self.endpoints['auth'])
+
+        data = {
+            'client_id': self.client_id,
+            'secret': self.secret,
+            'access_token': self.access_token
+        }
+
+        return http_request(url, 'DELETE', data)
 
     @require_access_token
     def transactions(self, options=None):
