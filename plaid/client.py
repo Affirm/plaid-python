@@ -1,7 +1,7 @@
 import json
 from urlparse import urljoin
 
-from http import http_request
+from http import http_request as _http_request
 
 # @todo Sandboxing?
 # @todo "Single Request Call"
@@ -53,7 +53,7 @@ class Client(object):
         'upgrade': '/upgrade'
     }
 
-    def __init__(self, client_id, secret, access_token=None):
+    def __init__(self, client_id, secret, access_token=None, http_request=_http_request):
         """
         `client_id`     str     Your Plaid client ID
         `secret`        str     Your Plaid secret
@@ -62,6 +62,7 @@ class Client(object):
         self.client_id = client_id
         self.secret = secret
         self.access_token = None
+        self.http_request = http_request
 
         if access_token:
             self.set_access_token(access_token)
@@ -79,7 +80,7 @@ class Client(object):
     @require_access_token
     def _send_update_request(self, url, data):
         data['access_token'] = self.access_token
-        return http_request(url, 'PATCH', data)
+        return self.http_request(url, 'PATCH', data)
 
 
     def connect(self, account_type, username, password, options=None, pin=None):
@@ -122,7 +123,7 @@ class Client(object):
         if options:
             data['options'] = json.dumps(options)
 
-        response = http_request(url, 'POST', data)
+        response = self.http_request(url, 'POST', data)
 
         if response.ok:
             json_data = json.loads(response.content)
@@ -172,7 +173,7 @@ class Client(object):
         if update:
             response = self._send_update_request(url, data)
         else:
-            response = http_request(url, 'POST', data)
+            response = self.http_request(url, 'POST', data)
 
         if response.ok:
             json_data = json.loads(response.content)
@@ -213,7 +214,7 @@ class Client(object):
         if options:
             data['options'] = json.dumps(options)
 
-        return http_request(url, 'POST', data)
+        return self.http_request(url, 'POST', data)
 
     @require_access_token
     def auth_step(self, account_type, mfa, options=None, update=False):
@@ -250,7 +251,7 @@ class Client(object):
             data['options'] = json.dumps(options)
 
         method = 'PATCH' if update else 'POST'
-        return http_request(url, method, data)
+        return self.http_request(url, method, data)
 
     @require_access_token
     def upgrade(self, upgrade_to):
@@ -267,7 +268,7 @@ class Client(object):
             'upgrade_to': upgrade_to
         }
 
-        return http_request(url, 'POST', data)
+        return self.http_request(url, 'POST', data)
 
 
     @require_access_token
@@ -283,7 +284,7 @@ class Client(object):
             'access_token': self.access_token
         }
 
-        return http_request(url, 'DELETE', data)
+        return self.http_request(url, 'DELETE', data)
 
     @require_access_token
     def delete_auth(self):
@@ -298,7 +299,7 @@ class Client(object):
             'access_token': self.access_token
         }
 
-        return http_request(url, 'DELETE', data)
+        return self.http_request(url, 'DELETE', data)
 
     @require_access_token
     def transactions(self, options=None):
@@ -323,7 +324,7 @@ class Client(object):
         if options:
             data['options'] = json.dumps(options)
 
-        return http_request(url, 'GET', data)
+        return self.http_request(url, 'GET', data)
 
     def entity(self, entity_id, options=None):
         """
@@ -332,14 +333,14 @@ class Client(object):
         `entity_id`     str     Entity id to fetch
         """
         url = urljoin(self.url, self.endpoints['entity'])
-        return http_request(url, 'GET', {'entity_id': entity_id})
+        return self.http_request(url, 'GET', {'entity_id': entity_id})
 
     def categories(self):
         """
         Fetch all categories
         """
         url = urljoin(self.url, self.endpoints['categories'])
-        return http_request(url, 'GET')
+        return self.http_request(url, 'GET')
 
     def category(self, category_id, options=None):
         """
@@ -348,7 +349,7 @@ class Client(object):
         `category_id`   str     Category id to fetch
         """
         url = urljoin(self.url, self.endpoints['category']) % category_id
-        return http_request(url, 'GET')
+        return self.http_request(url, 'GET')
 
     def categories_by_mapping(self, mapping, category_type, options=None):
         """
@@ -374,7 +375,7 @@ class Client(object):
         }
         if options:
             data['options'] = json.dumps(options)
-        return http_request(url, 'GET', data)
+        return self.http_request(url, 'GET', data)
 
     @require_access_token
     def balance(self, options=None):
@@ -393,7 +394,7 @@ class Client(object):
         if options:
             data['options'] = json.dumps(options)
 
-        return http_request(url, 'GET', data)
+        return self.http_request(url, 'GET', data)
 
     @require_access_token
     def numbers(self):
@@ -408,11 +409,11 @@ class Client(object):
             'access_token': self.access_token
         }
 
-        return http_request(url, 'POST', data)
+        return self.http_request(url, 'POST', data)
 
     def institutions(self):
         """
         Fetch the available institutions
         """
         url = urljoin(self.url, self.endpoints['institutions'])
-        return http_request(url, 'GET')
+        return self.http_request(url, 'GET')
