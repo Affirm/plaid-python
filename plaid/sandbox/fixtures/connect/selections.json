@@ -1,0 +1,1 @@
+{"access_token": "test_citi", "mfa": [{"question": "You say tomato, I say...?", "answers": ["tomato", "potato"]}, {"question": "Ketchup or mustard?", "answers": ["ketchup", "mustard"]}], "type": "selections"}
