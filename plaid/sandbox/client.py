@@ -13,10 +13,11 @@ class MockResponse(object):
 
 
 class SandboxClient(Client):
+    # noinspection PyUnusedLocal,PyMissingConstructor
     def __init__(self, client_id, secret, access_token=None):
-        super(SandboxClient, self).__init__(client_id, secret, access_token)
         self._raw_institutions = self._load_fixture('institutions.json')
         self._institutions = {i['type']: i for i in self._raw_institutions}
+        self.access_token = access_token
 
     @staticmethod
     def _load_fixture(filename):
@@ -48,7 +49,7 @@ class SandboxClient(Client):
                 else:
                     data = self._load_fixture('connect/code_email.json')
         else:
-            data = self._load_fixture('connect/success.json')
+            data = self._load_connect_success(account_type)
             status_code = 200
 
         if 'access_token' in data:
@@ -62,9 +63,17 @@ class SandboxClient(Client):
         return MockResponse(data)
 
     def transactions(self, options=None):
-        data = self._load_fixture('connect/success.json')
+        data = self._load_connect_success()
         data['access_token'] = self.access_token
         return MockResponse(data)
+
+    def _load_connect_success(self, account_type=None):
+        if not account_type:
+            account_type = self.access_token.strip('test_')
+        filename = {
+            'wells': 'connect/no_transactions.json',
+        }.get(account_type, 'connect/success.json')
+        return self._load_fixture(filename)
 
     def connect_step(self, account_type, mfa, options=None):
         institution = self._institutions[account_type]
@@ -77,18 +86,18 @@ class SandboxClient(Client):
         else:
             if 'questions(3)' in institution['mfa']:
                 if mfa == 'tomato':
-                    data = self._load_fixture('connect/success.json')
+                    data = self._load_connect_success(account_type)
                 else:
                     data = self._load_fixture('connect/invalid_mfa.json')
                     status_code = 402
             elif 'code' in institution['mfa']:
                 if mfa == '1234':
-                    data = self._load_fixture('connect/success.json')
+                    data = self._load_connect_success(account_type)
             else:
                 mfa = json.loads(mfa)
                 if isinstance(mfa, list):
                     if mfa == ['tomato', 'ketchup']:
-                        data = self._load_fixture('connect/success.json')
+                        data = self._load_connect_success(account_type)
 
         if 'access_token' in data:
             self.access_token = "test_{}".format(account_type)
