@@ -14,7 +14,7 @@ class MockResponse(object):
 
 class SandboxClient(Client):
     # noinspection PyUnusedLocal,PyMissingConstructor
-    def __init__(self, client_id, secret, access_token=None):
+    def __init__(self, client_id, secret, access_token=None, http_request=None):
         self._raw_institutions = self._load_fixture('institutions.json')
         self._institutions = {i['type']: i for i in self._raw_institutions}
         self.access_token = access_token
