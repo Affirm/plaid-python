@@ -3,6 +3,14 @@ import os
 from plaid.client import Client
 
 
+ERROR_PASSWORDS = [
+    'account_locked',
+    'account_not_supported',
+    'account_not_setup',
+    'not_responding'
+]
+
+
 class MockResponse(object):
     def __init__(self, _json, status_code=200):
         self._json = _json
@@ -34,8 +42,12 @@ class SandboxClient(Client):
         institution = self._institutions[account_type]
         if username not in ('plaid_test', 'plaid_selections'):
             assert False
+
+        if password not in ERROR_PASSWORDS + ['plaid_good']:
+            password = 'invalid_password'
+
         if password != 'plaid_good':
-            data = self._load_fixture('connect/invalid_password.json')
+            data = self._load_fixture("connect/{}.json".format(password))
             status_code = 402
         elif institution['mfa']:
             status_code = 201
