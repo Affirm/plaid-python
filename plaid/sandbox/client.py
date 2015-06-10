@@ -80,7 +80,14 @@ class SandboxClient(Client):
         data = None
         status_code = 200
         if not mfa:
-            send_method = options['send_method']['type']
+            if 'mask' in options['send_method']:
+                send_method = {
+                    'xxx-xxx-5309': 'phone',
+                    't..t@plaid.com': 'email'
+                }[options['send_method']['mask']]
+            else:
+                send_method = options['send_method']['type']
+
             status_code = 201
             data = self._load_fixture("connect/code_{}.json".format(send_method))
         else:
