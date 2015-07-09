@@ -70,8 +70,20 @@ class SandboxClient(Client):
         return MockResponse(data, status_code)
 
     def upgrade(self, upgrade_to):
-        data = self._load_fixture('upgrade/success.json')
-        data['access_token'] = self.access_token
+        account_type = self.access_token.strip('test_')
+        institution = self._institutions[account_type]
+
+        if 'code' in institution['mfa']:
+            data = self._load_fixture('connect/code_email.json')
+        elif 'questions(3)' in institution['mfa']:
+            data = self._load_fixture('connect/questions.json')
+        elif 'selections' in institution['mfa']:
+            data = self._load_fixture('connect/selections.json')
+        else:
+            data = self._load_fixture('upgrade/success.json')
+
+        if 'access_token' in data:
+            data['access_token'] = self.access_token
         return MockResponse(data)
 
     def transactions(self, options=None):
@@ -122,3 +134,40 @@ class SandboxClient(Client):
             self.access_token = "test_{}".format(account_type)
             data['access_token'] = self.access_token
         return MockResponse(data, status_code)
+
+    def upgrade_step(self, mfa, options=None):
+        account_type = self.access_token.strip('test_')
+        institution = self._institutions[account_type]
+
+        if 'code' in institution['mfa']:
+            if mfa == '1234':
+                data = self._load_fixture('upgrade/success.json')
+                status_code = 200
+            else:
+                data = self._load_fixture('connect/invalid_mfa.json')
+                status_code = 402
+        elif 'questions(3)' in institution['mfa']:
+            if mfa == 'tomato':
+                data = self._load_fixture('upgrade/success.json')
+                status_code = 200
+            else:
+                data = self._load_fixture('connect/invalid_mfa.json')
+                status_code = 402
+        elif 'selections' in institution['mfa']:
+            mfa = json.loads(mfa)
+            if mfa == ['tomato', 'ketchup']:
+                data = self._load_fixture('upgrade/success.json')
+                status_code = 200
+            else:
+                data = self._load_fixture('connect/invalid_mfa.json')
+                status_code = 402
+        else:
+            assert False, 'upgrade_step should only be called if upgrade returns an MFA'
+
+        if 'access_token' in data:
+            data['access_token'] = self.access_token
+        return MockResponse(data, status_code)
+
+    def transactions(self, options=None):
+        account_type = self.access_token.strip('test_')
+        return MockResponse(self._load_connect_success(account_type), 200)

@@ -40,6 +40,7 @@ class Client(object):
 
     endpoints = {
         'connect': '/connect',
+        'transactions': '/connect/get/',
         'connect_step': '/connect/step',
         'entity': '/entity',
         'categories': '/category',
@@ -50,7 +51,8 @@ class Client(object):
         'auth_step': '/auth/step',
         'numbers': '/auth/get',
         'institutions': '/institutions',
-        'upgrade': '/upgrade'
+        'upgrade': '/upgrade',
+        'upgrade_step': '/upgrade/step'
     }
 
     def __init__(self, client_id, secret, access_token=None, http_request=_http_request):
@@ -270,6 +272,26 @@ class Client(object):
 
         return self.http_request(url, 'POST', data)
 
+    @require_access_token
+    def upgrade_step(self, mfa):
+        """
+        Perform a MFA (Multi Factor Authentication) step, requires
+        `access_token`
+
+        `mfa`           str     The MFA answer, e.g. an answer to q security
+                                question or code sent to your phone, etc.
+        """
+        url = urljoin(self.url, self.endpoints['upgrade_step'])
+
+        data = {
+            'client_id': self.client_id,
+            'secret': self.secret,
+            'access_token': self.access_token,
+            'mfa': mfa
+        }
+
+        return self.http_request(url, 'POST', data)
+
 
     @require_access_token
     def delete_connect(self):
@@ -307,24 +329,23 @@ class Client(object):
         Fetch a list of transactions, requires `access_token`
 
         `options`   dict
-            `last`      str         Collect all transactions since this
+            `pending`   bool        Collect all transactions since this
                                     transaction ID
+            `account`   str         Collect transactions for a specific account
+                                    only
         """
-        if options is None:
-            options = {}
-        url = urljoin(self.url, self.endpoints['connect'])
+        url = urljoin(self.url, self.endpoints['transactions'])
 
         data = {
             'client_id': self.client_id,
             'secret': self.secret,
             'access_token': self.access_token,
-            'options': json.dumps(options)
         }
 
         if options:
             data['options'] = json.dumps(options)
 
-        return self.http_request(url, 'GET', data)
+        return self.http_request(url, 'POST', data)
 
     def entity(self, entity_id, options=None):
         """
