@@ -1,6 +1,11 @@
 import json
+import requests
 import os
+import gevent
+from gevent import monkey
 from plaid.client import Client
+
+monkey.patch_all()
 
 
 ERROR_PASSWORDS = [
@@ -21,6 +26,9 @@ class MockResponse(object):
 
 
 class SandboxClient(Client):
+    accounts = {}
+    account_counter = 0
+
     # noinspection PyUnusedLocal,PyMissingConstructor
     def __init__(self, client_id, secret, access_token=None, http_request=None):
         self._raw_institutions = self._load_fixture('institutions.json')
@@ -33,12 +41,43 @@ class SandboxClient(Client):
         with open(os.path.join(dir_name, 'fixtures', filename)) as f:
             return json.loads(f.read())
 
+    @staticmethod
+    def _post_webhook(account_number, event_type):
+        account = SandboxClient.accounts[account_number]
+        data = SandboxClient._load_fixture('webhook/%s.json' % event_type)
+        data['access_token'] = 'test_%d' % account_number
+        headers = {'Content-type': 'application/json', 'Accept': 'application/json'}
+        requests.post(account['webhook'], data=json.dumps(data), headers=headers)
+
+    def _process_connect_success(self, data, account_number=None):
+        if not account_number:
+            account_number = int(self.access_token[5:])
+        account = SandboxClient.accounts[account_number]
+
+        if account['login_only']:
+            del data['transactions']
+        if account['webhook'] is not None:
+            gevent.spawn_later(1, self._post_webhook, account_number, 'initial')
+            gevent.spawn_later(6, self._post_webhook, account_number, 'historical')
+
+    def _load_connect_success(self, account_type=None):
+        if not account_type:
+            account_number = int(self.access_token[5:])
+            account = SandboxClient.accounts[account_number]
+            account_type = account['account_type']
+
+        filename = {
+            'wells': 'connect/no_transactions.json',
+        }.get(account_type, 'connect/success.json')
+        return self._load_fixture(filename)
+
     def institutions(self):
         return MockResponse(self._raw_institutions)
 
     def connect(self, account_type, username, password,
                 options=None, pin=None):
         data = None
+        success = False
         institution = self._institutions[account_type]
         if username not in ('plaid_test', 'plaid_selections'):
             assert False
@@ -63,15 +102,27 @@ class SandboxClient(Client):
         else:
             data = self._load_connect_success(account_type)
             status_code = 200
+            success = True
 
         if 'access_token' in data:
-            self.access_token = "test_{}".format(account_type)
+            account_number = SandboxClient.account_counter
+            SandboxClient.account_counter += 1
+            SandboxClient.accounts[account_number] = {
+                'account_type': account_type,
+                'login_only': options.get('login_only'),
+                'webhook': options.get('webhook') if options.get('login_only') else None
+            }
+
+            self.access_token = "test_{}".format(account_number)
             data['access_token'] = self.access_token
+        if success:
+            self._process_connect_success(data, account_number)
         return MockResponse(data, status_code)
 
     def upgrade(self, upgrade_to):
-        account_type = self.access_token[5:]
-        institution = self._institutions[account_type]
+        account_number = int(self.access_token[5:])
+        account = SandboxClient.accounts[account_number]
+        institution = self._institutions[account['account_type']]
 
         if 'code' in institution['mfa']:
             data = self._load_fixture('connect/code_email.json')
@@ -95,18 +146,11 @@ class SandboxClient(Client):
         data['access_token'] = self.access_token
         return MockResponse(data)
 
-    def _load_connect_success(self, account_type=None):
-        if not account_type:
-            account_type = self.access_token[5:]
-        filename = {
-            'wells': 'connect/no_transactions.json',
-        }.get(account_type, 'connect/success.json')
-        return self._load_fixture(filename)
-
     def connect_step(self, account_type, mfa, options=None):
         institution = self._institutions[account_type]
         data = None
         status_code = 200
+        success = False
         if not mfa:
             if 'mask' in options['send_method']:
                 send_method = {
@@ -122,26 +166,32 @@ class SandboxClient(Client):
             if 'questions(3)' in institution['mfa']:
                 if mfa == 'tomato':
                     data = self._load_connect_success(account_type)
+                    success = True
                 else:
                     data = self._load_fixture('connect/invalid_mfa.json')
                     status_code = 402
             elif 'code' in institution['mfa']:
                 if mfa == '1234':
                     data = self._load_connect_success(account_type)
+                    success = True
             else:
                 mfa = json.loads(mfa)
                 if isinstance(mfa, list):
                     if mfa == ['tomato', 'ketchup']:
                         data = self._load_connect_success(account_type)
+                        success = True
 
         if 'access_token' in data:
-            self.access_token = "test_{}".format(account_type)
             data['access_token'] = self.access_token
+
+        if success:
+            self._process_connect_success(data)
         return MockResponse(data, status_code)
 
     def upgrade_step(self, mfa, options=None):
-        account_type = self.access_token[5:]
-        institution = self._institutions[account_type]
+        account_number = int(self.access_token[5:])
+        account = SandboxClient.accounts[account_number]
+        institution = self._institutions[account['account_type']]
 
         if 'code' in institution['mfa']:
             if mfa == '1234':
@@ -171,7 +221,3 @@ class SandboxClient(Client):
         if 'access_token' in data:
             data['access_token'] = self.access_token
         return MockResponse(data, status_code)
-
-    def transactions(self, options=None):
-        account_type = self.access_token[5:]
-        return MockResponse(self._load_connect_success(account_type), 200)
