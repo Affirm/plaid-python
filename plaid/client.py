@@ -55,7 +55,7 @@ class Client(object):
         'upgrade_step': '/upgrade/step'
     }
 
-    def __init__(self, client_id, secret, access_token=None, http_request=_http_request):
+    def __init__(self, client_id, secret, access_token=None, http_request=_http_request, delay_webhook=None):
         """
         `client_id`     str     Your Plaid client ID
         `secret`        str     Your Plaid secret

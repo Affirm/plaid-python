@@ -1,7 +1,5 @@
 import json
-import requests
 import os
-import gevent
 from gevent import monkey
 from plaid.client import Client
 
@@ -30,10 +28,15 @@ class SandboxClient(Client):
     account_counter = 0
 
     # noinspection PyUnusedLocal,PyMissingConstructor
-    def __init__(self, client_id, secret, access_token=None, http_request=None):
+    def __init__(self, client_id, secret, access_token=None, http_request=None, delay_webhook=None):
         self._raw_institutions = self._load_fixture('institutions.json')
         self._institutions = {i['type']: i for i in self._raw_institutions}
         self.access_token = access_token
+        self.delay_webhook = delay_webhook or self._default_delay_webhook
+
+    @staticmethod
+    def _default_delay_webhook(*args, **kwargs):
+        assert False, (args, kwargs)
 
     @staticmethod
     def _load_fixture(filename):
@@ -41,13 +44,11 @@ class SandboxClient(Client):
         with open(os.path.join(dir_name, 'fixtures', filename)) as f:
             return json.loads(f.read())
 
-    @staticmethod
-    def _post_webhook(account_number, event_type):
+    def _post_webhook_later(self, delay, account_number, event_type):
         account = SandboxClient.accounts[account_number]
         data = SandboxClient._load_fixture('webhook/%s.json' % event_type)
         data['access_token'] = 'test_%d' % account_number
-        headers = {'Content-type': 'application/json', 'Accept': 'application/json'}
-        requests.post(account['webhook'], data=json.dumps(data), headers=headers)
+        self.delay_webhook(delay, account['webhook'], data)
 
     def _process_connect_success(self, data, account_number=None):
         if not account_number:
@@ -57,8 +58,8 @@ class SandboxClient(Client):
         if account['login_only']:
             del data['transactions']
         if account['webhook'] is not None:
-            gevent.spawn_later(1, self._post_webhook, account_number, 'initial')
-            gevent.spawn_later(6, self._post_webhook, account_number, 'historical')
+            self._post_webhook_later(1, account_number, 'initial')
+            self._post_webhook_later(6, account_number, 'historical')
 
     def _load_connect_success(self, account_type=None):
         if not account_type:
