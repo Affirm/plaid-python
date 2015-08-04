@@ -85,7 +85,7 @@ class Client(object):
         return self.http_request(url, 'PATCH', data)
 
 
-    def connect(self, account_type, username, password, options=None, pin=None):
+    def connect(self, account_type, username, password, options=None, pin=None, update=False):
         """
         Add a bank account user/login to Plaid and receive an access token
         unless a 2nd level of authentication is required, in which case
@@ -109,27 +109,36 @@ class Client(object):
             options = {}
         url = urljoin(self.url, self.endpoints['connect'])
 
-        credentials = {
-            'username': username,
-            'password': password,
-            'pin': pin
-        }
+        if username is not None:
+            credentials = {
+                'username': username,
+                'password': password,
+                'pin': pin
+            }
+        else:
+            credentials = None
 
         data = {
             'client_id': self.client_id,
             'secret': self.secret,
-            'type': account_type,
-            'credentials': json.dumps(credentials)
+            'type': account_type
         }
+        if credentials is not None:
+            data['credentials'] = json.dumps(credentials)
+        if type is not None:
+            data['type'] = account_type
 
         if options:
             data['options'] = json.dumps(options)
 
-        response = self.http_request(url, 'POST', data)
+        if update:
+            response = self._send_update_request(url, data)
+        else:
+            response = self.http_request(url, 'POST', data)
 
         if response.ok:
             json_data = json.loads(response.content)
-            if json_data.has_key('access_token'):
+            if 'access_token' in json_data:
                 self.access_token = json_data['access_token']
 
         return response
