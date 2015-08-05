@@ -28,15 +28,18 @@ class SandboxClient(Client):
     account_counter = 0
 
     # noinspection PyUnusedLocal,PyMissingConstructor
-    def __init__(self, client_id, secret, access_token=None, http_request=None, delay_webhook=None):
+    def __init__(self, client_id, secret, access_token=None, http_request=None):
         self._raw_institutions = self._load_fixture('institutions.json')
         self._institutions = {i['type']: i for i in self._raw_institutions}
         self.access_token = access_token
-        self.delay_webhook = delay_webhook or self._default_delay_webhook
 
     @staticmethod
-    def _default_delay_webhook(*args, **kwargs):
-        assert False, (args, kwargs)
+    def post_initial_webhook(url, data):
+        assert False, 'must override post_initial_webhook staticmethod'
+
+    @staticmethod
+    def post_historical_webhook(url, data):
+        assert False, 'must override post_historical_webhook staticmethod'
 
     @staticmethod
     def _load_fixture(filename):
@@ -44,11 +47,15 @@ class SandboxClient(Client):
         with open(os.path.join(dir_name, 'fixtures', filename)) as f:
             return json.loads(f.read())
 
-    def _post_webhook_later(self, delay, account_number, event_type):
+    @classmethod
+    def _post_webhook(cls, account_number, event_type):
         account = SandboxClient.accounts[account_number]
         data = SandboxClient._load_fixture('webhook/%s.json' % event_type)
         data['access_token'] = 'test_%d' % account_number
-        self.delay_webhook(delay, account['webhook'], data)
+        if event_type == 'initial':
+            cls.post_initial_webhook(account['webhook'], data)
+        elif event_type == 'historical':
+            cls.post_historical_webhook(account['webhook'], data)
 
     def _process_connect_success(self, data, account_number=None):
         if not account_number:
@@ -58,8 +65,8 @@ class SandboxClient(Client):
         if account['login_only']:
             del data['transactions']
         if account['webhook'] is not None:
-            self._post_webhook_later(1, account_number, 'initial')
-            self._post_webhook_later(6, account_number, 'historical')
+            self._post_webhook(account_number, 'initial')
+            self._post_webhook(account_number, 'historical')
 
     def _load_connect_success(self, account_type=None):
         if not account_type:
