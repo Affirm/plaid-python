@@ -35,11 +35,11 @@ class SandboxClient(Client):
 
     @staticmethod
     def post_initial_webhook(url, data):
-        assert False, 'must override post_initial_webhook staticmethod'
+        raise NotImplementedError
 
     @staticmethod
     def post_historical_webhook(url, data):
-        assert False, 'must override post_historical_webhook staticmethod'
+        raise NotImplementedError
 
     @staticmethod
     def _load_fixture(filename):
