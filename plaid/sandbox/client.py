@@ -1,9 +1,6 @@
 import json
 import os
-from gevent import monkey
 from plaid.client import Client
-
-monkey.patch_all()
 
 
 ERROR_PASSWORDS = [
@@ -24,9 +21,6 @@ class MockResponse(object):
 
 
 class SandboxClient(Client):
-    accounts = {}
-    account_counter = 0
-
     # noinspection PyUnusedLocal,PyMissingConstructor
     def __init__(self, client_id, secret, access_token=None, http_request=None):
         self._raw_institutions = self._load_fixture('institutions.json')
@@ -41,6 +35,14 @@ class SandboxClient(Client):
     def post_historical_webhook(url, data):
         raise NotImplementedError
 
+    def get_account(self, access_token=None):
+        access_token = access_token or self.access_token
+        return json.loads(access_token[5:])
+
+    def gen_access_token(self, account):
+        self.access_token = 'test_%s' % json.dumps(account, sort_keys=True)
+        return self.access_token
+
     @staticmethod
     def _load_fixture(filename):
         dir_name = os.path.dirname(__file__)
@@ -48,31 +50,26 @@ class SandboxClient(Client):
             return json.loads(f.read())
 
     @classmethod
-    def _post_webhook(cls, account_number, event_type):
-        account = SandboxClient.accounts[account_number]
+    def _post_webhook(cls, account, event_type):
         data = SandboxClient._load_fixture('webhook/%s.json' % event_type)
-        data['access_token'] = 'test_%d' % account_number
+        data['access_token'] = 'test_%s' % json.dumps(account, sort_keys=True)
         if event_type == 'initial':
             cls.post_initial_webhook(account['webhook'], data)
         elif event_type == 'historical':
             cls.post_historical_webhook(account['webhook'], data)
 
-    def _process_connect_success(self, data, account_number=None):
-        if not account_number:
-            account_number = int(self.access_token[5:])
-        account = SandboxClient.accounts[account_number]
+    def _process_connect_success(self, data, account=None):
+        account = account or self.get_account()
 
-        if account['login_only']:
+        if account.get('login_only'):
             del data['transactions']
-        if account['webhook'] is not None:
-            self._post_webhook(account_number, 'initial')
-            self._post_webhook(account_number, 'historical')
+        if account.get('webhook') is not None:
+            self._post_webhook(account, 'initial')
+            self._post_webhook(account, 'historical')
 
     def _load_connect_success(self, account_type=None):
         if not account_type:
-            account_number = int(self.access_token[5:])
-            account = SandboxClient.accounts[account_number]
-            account_type = account['account_type']
+            account_type = self.get_account()['account_type']
 
         filename = {
             'wells': 'connect/no_transactions.json',
@@ -113,23 +110,19 @@ class SandboxClient(Client):
             success = True
 
         if 'access_token' in data:
-            account_number = SandboxClient.account_counter
-            SandboxClient.account_counter += 1
-            SandboxClient.accounts[account_number] = {
+            account = {
                 'account_type': account_type,
                 'login_only': options.get('login_only'),
                 'webhook': options.get('webhook') if options.get('login_only') else None
             }
-
-            self.access_token = "test_{}".format(account_number)
+            self.gen_access_token(account)
             data['access_token'] = self.access_token
-        if success:
-            self._process_connect_success(data, account_number)
+            if success:
+                self._process_connect_success(data, account=account)
         return MockResponse(data, status_code)
 
     def upgrade(self, upgrade_to):
-        account_number = int(self.access_token[5:])
-        account = SandboxClient.accounts[account_number]
+        account = self.get_account()
         institution = self._institutions[account['account_type']]
 
         if 'code' in institution['mfa']:
@@ -197,8 +190,7 @@ class SandboxClient(Client):
         return MockResponse(data, status_code)
 
     def upgrade_step(self, mfa, options=None):
-        account_number = int(self.access_token[5:])
-        account = SandboxClient.accounts[account_number]
+        account = self.get_account()
         institution = self._institutions[account['account_type']]
 
         if 'code' in institution['mfa']:
