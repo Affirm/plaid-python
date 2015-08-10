@@ -282,11 +282,13 @@ class Client(object):
         return self.http_request(url, 'POST', data)
 
     @require_access_token
-    def upgrade_step(self, mfa):
+    def upgrade_step(self, upgrade_to, mfa):
         """
         Perform a MFA (Multi Factor Authentication) step, requires
         `access_token`
 
+        `upgrade_to`    str     The service to upgrade to; must match `upgrade`
+                                call.
         `mfa`           str     The MFA answer, e.g. an answer to q security
                                 question or code sent to your phone, etc.
         """
@@ -296,6 +298,7 @@ class Client(object):
             'client_id': self.client_id,
             'secret': self.secret,
             'access_token': self.access_token,
+            'upgrade_to': upgrade_to,
             'mfa': mfa
         }
 

@@ -189,7 +189,8 @@ class SandboxClient(Client):
             self._process_connect_success(data)
         return MockResponse(data, status_code)
 
-    def upgrade_step(self, mfa, options=None):
+    def upgrade_step(self, upgrade_to, mfa, options=None):
+        assert upgrade_to == 'auth'
         account = self.get_account()
         institution = self._institutions[account['account_type']]
 
