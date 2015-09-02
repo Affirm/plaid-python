@@ -164,23 +164,25 @@ class SandboxClient(Client):
             status_code = 201
             data = self._load_fixture("connect/code_{}.json".format(send_method))
         else:
-            if 'questions(3)' in institution['mfa']:
-                if mfa == 'tomato':
+            if 'selections' in institution['mfa']:
+                try:
+                    mfa = json.loads(mfa)
+                    if mfa == ['tomato', 'ketchup']:
+                        data = self._load_connect_success(account_type)
+                        success = True
+                except:
+                    # maybe the username wasn't plaid_selections? let it slide
+                    pass
+            if not success:
+                if 'questions(3)' in institution['mfa'] and mfa == 'tomato':
+                    data = self._load_connect_success(account_type)
+                    success = True
+                elif 'code' in institution['mfa'] and mfa == '1234':
                     data = self._load_connect_success(account_type)
                     success = True
                 else:
                     data = self._load_fixture('connect/invalid_mfa.json')
                     status_code = 402
-            elif 'code' in institution['mfa']:
-                if mfa == '1234':
-                    data = self._load_connect_success(account_type)
-                    success = True
-            else:
-                mfa = json.loads(mfa)
-                if isinstance(mfa, list):
-                    if mfa == ['tomato', 'ketchup']:
-                        data = self._load_connect_success(account_type)
-                        success = True
 
         if 'access_token' in data:
             data['access_token'] = self.access_token
@@ -222,3 +224,6 @@ class SandboxClient(Client):
         if 'access_token' in data:
             data['access_token'] = self.access_token
         return MockResponse(data, status_code)
+
+    def delete_connect(self):
+        return MockResponse({})
