@@ -80,7 +80,7 @@ class SandboxClient(Client):
         return MockResponse(self._raw_institutions)
 
     def connect(self, account_type, username, password,
-                options=None, pin=None):
+                options=None, pin=None, update=False):
         data = None
         success = False
         institution = self._institutions[account_type]
@@ -121,7 +121,7 @@ class SandboxClient(Client):
                 self._process_connect_success(data, account=account)
         return MockResponse(data, status_code)
 
-    def upgrade(self, upgrade_to):
+    def upgrade(self, upgrade_to, update=False):
         account = self.get_account()
         institution = self._institutions[account['account_type']]
 
@@ -147,7 +147,7 @@ class SandboxClient(Client):
         data['access_token'] = self.access_token
         return MockResponse(data)
 
-    def connect_step(self, account_type, mfa, options=None):
+    def connect_step(self, account_type, mfa, options=None, update=False):
         institution = self._institutions[account_type]
         data = None
         status_code = 200
@@ -191,7 +191,7 @@ class SandboxClient(Client):
             self._process_connect_success(data)
         return MockResponse(data, status_code)
 
-    def upgrade_step(self, upgrade_to, mfa, options=None):
+    def upgrade_step(self, upgrade_to, mfa, options=None, update=False):
         assert upgrade_to == 'auth'
         account = self.get_account()
         institution = self._institutions[account['account_type']]
