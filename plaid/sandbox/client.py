@@ -72,7 +72,7 @@ class SandboxClient(Client):
         return data
 
     def set_access_token(self, access_token):
-        self._account = json.loads(self.access_token[5:])
+        self._account = json.loads(access_token[5:])
 
     def get_access_token(self):
         return 'test_%s' % json.dumps(self._account, sort_keys=True)
