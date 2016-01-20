@@ -57,6 +57,9 @@ class SandboxClient(Client):
             account_type = self._account['account_type']
             for a in data['accounts']:
                 a['_id'] = account_type + a['_id']
+        if 'transactions' in data:
+            for transaction in data['transactions']:
+                transaction['_account'] = account_type + transaction['_account']
 
         return data
 
@@ -69,6 +72,7 @@ class SandboxClient(Client):
         data = self._load_fixture(filename)
         if not keep_transactions and self._account.get('login_only'):
             del data['transactions']
+            self._post_webhooks()
         return data
 
     def set_access_token(self, access_token):
@@ -111,7 +115,6 @@ class SandboxClient(Client):
             else:
                 status_code = 200
                 data = self._load_connect_success()
-                self._post_webhooks()
         elif password in ERROR_PASSWORDS:
             status_code = 402
             data = self._load_fixture("connect/{}.json".format(password))
