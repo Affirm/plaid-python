@@ -1,3 +1,4 @@
+import abc
 import json
 import os
 from plaid.client import Client
@@ -21,138 +22,131 @@ class MockResponse(object):
 
 
 class SandboxClient(Client):
+    __metaclass__ = abc.ABCMeta
+
     # noinspection PyUnusedLocal,PyMissingConstructor
     def __init__(self, client_id, secret, access_token=None, http_request=None):
         self._raw_institutions = self._load_fixture('institutions.json')
         self._institutions = {i['type']: i for i in self._raw_institutions}
-        self.access_token = access_token
+        self._account = None
 
-    @staticmethod
-    def post_initial_webhook(url, data):
+    @abc.abstractmethod
+    def post_initial_webhook(self, url, data):
         raise NotImplementedError
 
-    @staticmethod
-    def post_historical_webhook(url, data):
+    @abc.abstractmethod
+    def post_historical_webhook(self, url, data):
         raise NotImplementedError
 
-    def get_account(self, access_token=None):
-        access_token = access_token or self.access_token
-        return json.loads(access_token[5:])
+    def _post_webhooks(self):
+        url = self._account.get('webhook')
+        if url is not None:
+            init_data = self._load_fixture('webhook/initial.json')
+            hist_data = self._load_fixture('webhook/historical.json')
+            self.post_initial_webhook(url, init_data)
+            self.post_historical_webhook(url, hist_data)
 
-    def gen_access_token(self, account):
-        self.access_token = 'test_%s' % json.dumps(account, sort_keys=True)
-        return self.access_token
-
-    @staticmethod
-    def _load_fixture(filename):
+    def _load_fixture(self, filename):
         dir_name = os.path.dirname(__file__)
         with open(os.path.join(dir_name, 'fixtures', filename)) as f:
-            return json.loads(f.read())
+            data = json.loads(f.read())
 
-    @classmethod
-    def _post_webhook(cls, account, event_type):
-        data = SandboxClient._load_fixture('webhook/%s.json' % event_type)
-        data['access_token'] = 'test_%s' % json.dumps(account, sort_keys=True)
-        if event_type == 'initial':
-            cls.post_initial_webhook(account['webhook'], data)
-        elif event_type == 'historical':
-            cls.post_historical_webhook(account['webhook'], data)
+        if 'access_token' in data:
+            data['access_token'] = self.get_access_token()
+        if 'accounts' in data:
+            account_type = self._account['account_type']
+            for a in data['accounts']:
+                a['_id'] = account_type + a['_id']
+        if 'transactions' in data:
+            for transaction in data['transactions']:
+                transaction['_account'] = account_type + transaction['_account']
 
-    def _process_connect_success(self, data, account=None):
-        account = account or self.get_account()
+        return data
 
-        if account.get('login_only'):
-            del data['transactions']
-        if account.get('webhook') is not None:
-            self._post_webhook(account, 'initial')
-            self._post_webhook(account, 'historical')
-
-    def _load_connect_success(self, account_type=None):
-        if not account_type:
-            account_type = self.get_account()['account_type']
-
+    def _load_connect_success(self, keep_transactions=False):
+        account_type = self._account['account_type']
         filename = {
             'wells': 'connect/no_transactions.json',
         }.get(account_type, 'connect/success.json')
-        return self._load_fixture(filename)
+
+        data = self._load_fixture(filename)
+        if not keep_transactions and self._account.get('login_only'):
+            del data['transactions']
+            self._post_webhooks()
+        return data
+
+    def set_access_token(self, access_token):
+        self._account = json.loads(access_token[5:])
+
+    def get_access_token(self):
+        return 'test_%s' % json.dumps(self._account, sort_keys=True)
 
     def institutions(self):
         return MockResponse(self._raw_institutions)
 
     def connect(self, account_type, username, password,
                 options=None, pin=None, update=False):
-        data = None
-        success = False
+        self._account = {
+            'username': username,
+            'account_type': account_type,
+            'login_only': options.get('login_only'),
+            'webhook': options.get('webhook') if options.get('login_only') else None
+        }
+        options = options or {}
         institution = self._institutions[account_type]
+
         if username not in ('plaid_test', 'plaid_selections'):
             assert False
 
-        if password not in ERROR_PASSWORDS + ['plaid_good']:
-            password = 'invalid_password'
-
-        if password != 'plaid_good':
-            data = self._load_fixture("connect/{}.json".format(password))
-            status_code = 402
-        elif institution['mfa']:
-            status_code = 201
-            if username == 'plaid_selections' and 'selections' in institution['mfa']:
-                data = self._load_fixture('connect/selections.json')
-            elif 'questions(3)' in institution['mfa']:
-                data = self._load_fixture('connect/questions.json')
-            elif 'code' in institution['mfa']:
-                if options.get('list'):
-                    data = self._load_fixture('connect/code_list.json')
+        if password == 'plaid_good':
+            if institution['mfa']:
+                status_code = 201
+                if self._account['username'] == 'plaid_selections' and 'selections' in institution['mfa']:
+                    data = self._load_fixture('connect/selections.json')
+                elif 'questions(3)' in institution['mfa']:
+                    data = self._load_fixture('connect/questions.json')
+                elif 'code' in institution['mfa']:
+                    if options.get('list'):
+                        data = self._load_fixture('connect/code_list.json')
+                    else:
+                        data = self._load_fixture('connect/code_email.json')
                 else:
-                    data = self._load_fixture('connect/code_email.json')
+                    assert False, 'Bad Plaid sandbox^2 fixtures'
+            else:
+                status_code = 200
+                data = self._load_connect_success()
+        elif password in ERROR_PASSWORDS:
+            status_code = 402
+            data = self._load_fixture("connect/{}.json".format(password))
         else:
-            data = self._load_connect_success(account_type)
-            status_code = 200
-            success = True
+            status_code = 402
+            data = self._load_fixture("connect/invalid_password.json")
 
-        if 'access_token' in data:
-            account = {
-                'account_type': account_type,
-                'login_only': options.get('login_only'),
-                'webhook': options.get('webhook') if options.get('login_only') else None
-            }
-            self.gen_access_token(account)
-            data['access_token'] = self.access_token
-            if success:
-                self._process_connect_success(data, account=account)
         return MockResponse(data, status_code)
-
-    def upgrade(self, upgrade_to, update=False):
-        account = self.get_account()
-        institution = self._institutions[account['account_type']]
-
-        if 'code' in institution['mfa']:
-            data = self._load_fixture('connect/code_email.json')
-            status_code = 201
-        elif 'questions(3)' in institution['mfa']:
-            data = self._load_fixture('connect/questions.json')
-            status_code = 201
-        elif 'selections' in institution['mfa']:
-            data = self._load_fixture('connect/selections.json')
-            status_code = 201
-        else:
-            data = self._load_fixture('upgrade/success.json')
-            status_code = 200
-
-        if 'access_token' in data:
-            data['access_token'] = self.access_token
-        return MockResponse(data, status_code)
-
-    def transactions(self, options=None):
-        data = self._load_connect_success()
-        data['access_token'] = self.access_token
-        return MockResponse(data)
 
     def connect_step(self, account_type, mfa, options=None, update=False):
+        assert self._account['account_type'] == account_type
+
         institution = self._institutions[account_type]
-        data = None
-        status_code = 200
-        success = False
-        if not mfa:
+        if mfa is not None:
+            success = False
+            if self._account['username'] == 'plaid_selections' and 'selections' in institution['mfa']:
+                if set(json.loads(mfa)) == {'tomato', 'ketchup'}:
+                    success = True
+            elif 'questions(3)' in institution['mfa']:
+                if mfa == 'tomato':
+                    success = True
+            elif 'code' in institution['mfa'] and mfa == '1234':
+                if mfa == '1234':
+                    success = True
+
+            if success:
+                status_code = 200
+                data = self._load_connect_success()
+            else:
+                status_code = 402
+                data = self._load_fixture('connect/invalid_mfa.json')
+        else:
             if 'mask' in options['send_method']:
                 send_method = {
                     'xxx-xxx-5309': 'phone',
@@ -163,67 +157,71 @@ class SandboxClient(Client):
 
             status_code = 201
             data = self._load_fixture("connect/code_{}.json".format(send_method))
-        else:
-            if 'selections' in institution['mfa']:
-                try:
-                    mfa = json.loads(mfa)
-                    if mfa == ['tomato', 'ketchup']:
-                        data = self._load_connect_success(account_type)
-                        success = True
-                except:
-                    # maybe the username wasn't plaid_selections? let it slide
-                    pass
-            if not success:
-                if 'questions(3)' in institution['mfa'] and mfa == 'tomato':
-                    data = self._load_connect_success(account_type)
-                    success = True
-                elif 'code' in institution['mfa'] and mfa == '1234':
-                    data = self._load_connect_success(account_type)
-                    success = True
+
+        return MockResponse(data, status_code)
+
+    def upgrade(self, upgrade_to, options=None, update=False):
+        options = options or {}
+        institution = self._institutions[self._account['account_type']]
+
+        if institution['mfa']:
+            status_code = 201
+            if 'code' in institution['mfa']:
+                if options.get('list'):
+                    data = self._load_fixture('connect/code_list.json')
                 else:
-                    data = self._load_fixture('connect/invalid_mfa.json')
-                    status_code = 402
+                    data = self._load_fixture('connect/code_email.json')
+            elif 'questions(3)' in institution['mfa']:
+                data = self._load_fixture('connect/questions.json')
+            elif self._account['username'] == 'plaid_selections' and 'selections' in institution['mfa']:
+                data = self._load_fixture('connect/selections.json')
+            else:
+                assert False, 'Bad Plaid sandbox^2 fixtures'
+        else:
+            status_code = 200
+            data = self._load_fixture('upgrade/success.json')
 
-        if 'access_token' in data:
-            data['access_token'] = self.access_token
-
-        if success:
-            self._process_connect_success(data)
         return MockResponse(data, status_code)
 
     def upgrade_step(self, upgrade_to, mfa, options=None, update=False):
         assert upgrade_to == 'auth'
-        account = self.get_account()
-        institution = self._institutions[account['account_type']]
 
-        if 'code' in institution['mfa']:
-            if mfa == '1234':
-                data = self._load_fixture('upgrade/success.json')
+        institution = self._institutions[self._account['account_type']]
+        if mfa is not None:
+            success = False
+            if 'code' in institution['mfa']:
+                if mfa == '1234':
+                    success = True
+            elif 'questions(3)' in institution['mfa']:
+                if mfa == 'tomato':
+                    success = True
+            elif 'selections' in institution['mfa']:
+                if set(json.loads(mfa)) == {'tomato', 'ketchup'}:
+                    success = True
+
+            if success:
                 status_code = 200
-            else:
-                data = self._load_fixture('connect/invalid_mfa.json')
-                status_code = 402
-        elif 'questions(3)' in institution['mfa']:
-            if mfa == 'tomato':
                 data = self._load_fixture('upgrade/success.json')
-                status_code = 200
             else:
-                data = self._load_fixture('connect/invalid_mfa.json')
                 status_code = 402
-        elif 'selections' in institution['mfa']:
-            mfa = json.loads(mfa)
-            if mfa == ['tomato', 'ketchup']:
-                data = self._load_fixture('upgrade/success.json')
-                status_code = 200
-            else:
                 data = self._load_fixture('connect/invalid_mfa.json')
-                status_code = 402
         else:
-            assert False, 'upgrade_step should only be called if upgrade returns an MFA'
+            if 'mask' in options['send_method']:
+                send_method = {
+                    'xxx-xxx-5309': 'phone',
+                    't..t@plaid.com': 'email'
+                }[options['send_method']['mask']]
+            else:
+                send_method = options['send_method']['type']
 
-        if 'access_token' in data:
-            data['access_token'] = self.access_token
+            status_code = 201
+            data = self._load_fixture("connect/code_{}.json".format(send_method))
+
         return MockResponse(data, status_code)
+
+    def transactions(self, options=None):
+        data = self._load_connect_success(keep_transactions=True)
+        return MockResponse(data)
 
     def delete_connect(self):
         return MockResponse({})

@@ -6,6 +6,7 @@ from http import http_request as _http_request
 # @todo Sandboxing?
 # @todo "Single Request Call"
 
+
 def require_access_token(func):
     def inner_func(self, *args, **kwargs):
         if not self.access_token:
@@ -13,6 +14,7 @@ def require_access_token(func):
                             func.__name__)
         return func(self, *args, **kwargs)
     return inner_func
+
 
 class Client(object):
     """
@@ -83,7 +85,6 @@ class Client(object):
     def _send_update_request(self, url, data):
         data['access_token'] = self.access_token
         return self.http_request(url, 'PATCH', data)
-
 
     def connect(self, account_type, username, password, options=None, pin=None, update=False):
         """
@@ -270,7 +271,7 @@ class Client(object):
         return self.http_request(url, method, data)
 
     @require_access_token
-    def upgrade(self, upgrade_to):
+    def upgrade(self, upgrade_to, options=None):
         """
         Upgrade account to another plaid type
 
@@ -284,10 +285,13 @@ class Client(object):
             'upgrade_to': upgrade_to
         }
 
+        if options:
+            data['options'] = json.dumps(options)
+
         return self.http_request(url, 'POST', data)
 
     @require_access_token
-    def upgrade_step(self, upgrade_to, mfa):
+    def upgrade_step(self, upgrade_to, mfa, options=None):
         """
         Perform a MFA (Multi Factor Authentication) step, requires
         `access_token`
@@ -307,8 +311,10 @@ class Client(object):
             'mfa': mfa
         }
 
-        return self.http_request(url, 'POST', data)
+        if options:
+            data['options'] = json.dumps(options)
 
+        return self.http_request(url, 'POST', data)
 
     @require_access_token
     def delete_connect(self):
